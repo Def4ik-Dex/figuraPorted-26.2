@@ -1,0 +1,29 @@
+package org.figuramc.figura.mixin.gui;
+
+import java.util.Map;
+import net.minecraft.client.gui.components.debug.DebugScreenEntryList;
+import net.minecraft.client.gui.components.debug.DebugScreenEntryStatus;
+import net.minecraft.resources.Identifier;
+import org.figuramc.figura.FiguraMod;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(DebugScreenEntryList.class)
+public class DebugScreenEntryListMixin {
+   @Shadow
+   private Map<Identifier, DebugScreenEntryStatus> allStatuses;
+
+   private void setFullDebugStatuses() {
+      this.allStatuses.put(FiguraMod.FIGURA_DEBUG_KEY, DebugScreenEntryStatus.IN_OVERLAY);
+   }
+
+   @Inject(method = "rebuildCurrentList", at = @At("HEAD"))
+   private void injectSodiumSettings(CallbackInfo ci) {
+      if (!this.allStatuses.containsKey(FiguraMod.FIGURA_DEBUG_KEY)) {
+         this.allStatuses.put(FiguraMod.FIGURA_DEBUG_KEY, DebugScreenEntryStatus.IN_OVERLAY);
+      }
+   }
+}

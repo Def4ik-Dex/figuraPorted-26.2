@@ -1,0 +1,198 @@
+package org.figuramc.figura.lua.api.sound;
+
+import com.mojang.blaze3d.audio.SoundBuffer;
+import java.util.Base64;
+import java.util.Set;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.Sound;
+import net.minecraft.client.sounds.SoundManager;
+import net.minecraft.client.sounds.WeighedSoundEvents;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.RandomSource;
+import org.figuramc.figura.avatar.Avatar;
+import org.figuramc.figura.ducks.SoundEngineAccessor;
+import org.figuramc.figura.lua.LuaNotNil;
+import org.figuramc.figura.lua.LuaWhitelist;
+import org.figuramc.figura.lua.docs.LuaMethodDoc;
+import org.figuramc.figura.lua.docs.LuaMethodOverload;
+import org.figuramc.figura.lua.docs.LuaTypeDoc;
+import org.figuramc.figura.math.vector.FiguraVec3;
+import org.figuramc.figura.mixin.sound.SoundManagerAccessor;
+import org.figuramc.figura.permissions.Permissions;
+import org.figuramc.figura.utils.LuaUtils;
+import org.luaj.vm2.LuaError;
+import org.luaj.vm2.LuaTable;
+
+@LuaWhitelist
+@LuaTypeDoc(name = "SoundAPI", value = "sounds")
+public class SoundAPI {
+   private final Avatar owner;
+
+   public SoundAPI(Avatar owner) {
+      this.owner = owner;
+   }
+
+   public static SoundEngineAccessor getSoundEngine() {
+      return (SoundEngineAccessor)((SoundManagerAccessor)Minecraft.getInstance().getSoundManager()).getSoundEngine();
+   }
+
+   @LuaWhitelist
+   @LuaMethodDoc(
+      overloads = {
+            @LuaMethodOverload(argumentTypes = {String.class, FiguraVec3.class}, argumentNames = {"sound", "pos"}),
+            @LuaMethodOverload(argumentTypes = {String.class, Double.class, Double.class, Double.class}, argumentNames = {"sound", "posX", "posY", "posZ"}),
+            @LuaMethodOverload(
+               argumentTypes = {String.class, FiguraVec3.class, Double.class, Double.class, Boolean.class},
+               argumentNames = {"sound", "pos", "volume", "pitch", "loop"}
+            ),
+            @LuaMethodOverload(
+               argumentTypes = {String.class, Double.class, Double.class, Double.class, Double.class, Double.class, Boolean.class},
+               argumentNames = {"sound", "posX", "posY", "posZ", "volume", "pitch", "loop"}
+            )
+      },
+      value = "sounds.play_sound"
+   )
+   public LuaSound playSound(@LuaNotNil String id, Object x, Double y, Double z, Object w, Double t, boolean loop) {
+      LuaSound sound = this.__index(id);
+      float volume = 1.0F;
+      float pitch = 1.0F;
+      FiguraVec3 pos;
+      if (x instanceof FiguraVec3) {
+         pos = ((FiguraVec3)x).copy();
+         if (y != null) {
+            volume = y.floatValue();
+         }
+
+         if (z != null) {
+            pitch = z.floatValue();
+         }
+
+         if (w != null) {
+            if (!(w instanceof Boolean)) {
+               throw new LuaError("Illegal argument to playSound(): " + w);
+            }
+
+            loop = (Boolean)w;
+         }
+      } else {
+         if (x != null && !(x instanceof Number)) {
+            throw new LuaError("Illegal argument to playSound(): " + x);
+         }
+
+         pos = LuaUtils.parseVec3("playSound", x, y, z);
+         if (w != null) {
+            if (!(w instanceof Double)) {
+               throw new LuaError("Illegal argument to playSound(): " + w);
+            }
+
+            volume = ((Double)w).floatValue();
+         }
+
+         if (t != null) {
+            pitch = t.floatValue();
+         }
+      }
+
+      sound.pos(pos, null, null);
+      sound.volume(volume);
+      sound.pitch(pitch);
+      sound.loop(loop);
+      sound.play();
+      return sound;
+   }
+
+   @LuaWhitelist
+   @LuaMethodDoc(overloads = {@LuaMethodOverload, @LuaMethodOverload(argumentTypes = String.class, argumentNames = "id")}, value = "sounds.stop_sound")
+   public SoundAPI stopSound(String id) {
+      getSoundEngine().figura$stopSound(this.owner.owner, id);
+      return this;
+   }
+
+   @LuaWhitelist
+   @LuaMethodDoc(
+      overloads = {
+            @LuaMethodOverload(argumentTypes = {String.class, LuaTable.class}, argumentNames = {"name", "byteArray"}),
+            @LuaMethodOverload(argumentTypes = {String.class, String.class}, argumentNames = {"name", "base64Text"})
+      },
+      value = "sounds.new_sound"
+   )
+   public SoundAPI newSound(@LuaNotNil String name, @LuaNotNil Object object) {
+      byte[] bytes;
+      if (object instanceof LuaTable table) {
+         bytes = new byte[table.length()];
+
+         for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte)table.get(i + 1).checkint();
+         }
+      } else {
+         if (!(object instanceof String s)) {
+            throw new LuaError("Invalid type for newSound \"" + object.getClass().getSimpleName() + "\"");
+         }
+
+         bytes = Base64.getDecoder().decode(s);
+      }
+
+      try {
+         this.owner.loadSound(name, bytes);
+         return this;
+      } catch (Exception e) {
+         throw new LuaError("Failed to add custom sound \"" + name + "\"");
+      }
+   }
+
+   @LuaWhitelist
+   @LuaMethodDoc(overloads = @LuaMethodOverload(argumentTypes = String.class, argumentNames = "id"), value = "sounds.is_present")
+   public boolean isPresent(String id) {
+      if (id == null) {
+         return false;
+      }
+
+      if (this.owner.customSounds.get(id) != null) {
+         return true;
+      }
+
+      try {
+         return Minecraft.getInstance().getSoundManager().getSoundEvent(Identifier.parse(id)) != null;
+      } catch (Exception ignored) {
+         return false;
+      }
+   }
+
+   @LuaWhitelist
+   @LuaMethodDoc("sounds.get_custom_sounds")
+   public Set<String> getCustomSounds() {
+      return this.owner.customSounds.keySet();
+   }
+
+   @LuaWhitelist
+   public LuaSound __index(String id) {
+      SoundBuffer buffer = this.owner.customSounds.get(id);
+      if (buffer != null) {
+         if (this.owner.permissions.get(Permissions.CUSTOM_SOUNDS) == 1) {
+            return new LuaSound(buffer, id, this.owner);
+         }
+
+         this.owner.noPermissions.add(Permissions.CUSTOM_SOUNDS);
+      }
+
+      try {
+         WeighedSoundEvents events = Minecraft.getInstance().getSoundManager().getSoundEvent(Identifier.parse(id));
+         if (events != null) {
+            Sound sound = events.getSound(RandomSource.createThreadSafe());
+            if (sound != SoundManager.EMPTY_SOUND) {
+               this.owner.noPermissions.remove(Permissions.CUSTOM_SOUNDS);
+               return new LuaSound(sound, id, events.getSubtitle(), this.owner);
+            }
+         }
+
+         return new LuaSound(null, id, this.owner);
+      } catch (Exception e) {
+         throw new LuaError(e.getMessage());
+      }
+   }
+
+   @Override
+   public String toString() {
+      return "SoundAPI";
+   }
+}

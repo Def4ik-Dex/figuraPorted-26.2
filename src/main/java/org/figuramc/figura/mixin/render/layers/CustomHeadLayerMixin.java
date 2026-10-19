@@ -1,0 +1,194 @@
+package org.figuramc.figura.mixin.render.layers;
+
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.sugar.Local;
+import com.mojang.blaze3d.vertex.PoseStack;
+import java.util.function.Function;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.model.HeadedModel;
+import net.minecraft.client.model.object.skull.SkullModelBase;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.blockentity.SkullBlockRenderer;
+import net.minecraft.client.renderer.entity.RenderLayerParent;
+import net.minecraft.client.renderer.entity.layers.CustomHeadLayer;
+import net.minecraft.client.renderer.entity.layers.RenderLayer;
+import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
+import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.cuboid.ItemTransform;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemAttributeModifiers;
+import net.minecraft.world.item.equipment.Equippable;
+import net.minecraft.world.level.block.SkullBlock.Type;
+import org.figuramc.figura.avatar.Avatar;
+import org.figuramc.figura.avatar.AvatarManager;
+import org.figuramc.figura.ducks.FiguraEntityRenderStateExtension;
+import org.figuramc.figura.ducks.FiguraItemStackRenderStateExtension;
+import org.figuramc.figura.ducks.SkullBlockRendererAccessor;
+import org.figuramc.figura.lua.api.world.ItemStackAPI;
+import org.figuramc.figura.math.vector.FiguraVec3;
+import org.figuramc.figura.model.ParentType;
+import org.figuramc.figura.utils.RenderUtils;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(CustomHeadLayer.class)
+public abstract class CustomHeadLayerMixin<S extends LivingEntityRenderState, M extends EntityModel<S> & HeadedModel> extends RenderLayer<S, M> {
+   @Shadow
+   @Final
+   private Function<Type, SkullModelBase> skullModels;
+   @Unique
+   private Avatar avatar;
+
+   public CustomHeadLayerMixin(RenderLayerParent<S, M> renderLayerParent) {
+      super(renderLayerParent);
+   }
+
+   @Shadow
+   protected abstract RenderType resolveSkullRenderType(LivingEntityRenderState var1, Type var2);
+
+   @Inject(
+      at = @At("HEAD"),
+      method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V",
+      cancellable = true
+   )
+   private void render(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S entityState, float f, float g, CallbackInfo ci) {
+      ItemStackRenderState itemStackState = entityState.headItem;
+      if (((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack() != null
+         && !(
+            ((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack().getItem() instanceof Item armorItem
+               && armorItem.components().has(DataComponents.EQUIPPABLE)
+               && ((Equippable)armorItem.components().get(DataComponents.EQUIPPABLE)).slot() == EquipmentSlot.HEAD
+               && armorItem.components().has(DataComponents.ATTRIBUTE_MODIFIERS)
+               && ((ItemAttributeModifiers)armorItem.components().get(DataComponents.ATTRIBUTE_MODIFIERS))
+                  .modifiers()
+                  .stream()
+                  .anyMatch(attribute -> attribute.attribute() == Attributes.ARMOR)
+         )) {
+         ItemStack itemStack = ((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack();
+         this.avatar = AvatarManager.getAvatar(entityState);
+         if (RenderUtils.vanillaModel(this.avatar)) {
+            if (this.avatar.luaRuntime != null && !this.avatar.luaRuntime.vanilla_model.HELMET_ITEM.checkVisible()) {
+               ci.cancel();
+            } else {
+               if (entityState.wornHeadType != null) {
+                  Type type = entityState.wornHeadType;
+                  SkullModelBase skullModelBase = this.skullModels.apply(type);
+                  RenderType renderType = this.resolveSkullRenderType(entityState, type);
+                  if (this.avatar.pivotPartRender(ParentType.HelmetItemPivot, stack -> {
+                     float s = 19.0F;
+                     stack.scale(s, s, s);
+                     stack.translate(-0.5, 0.0, -0.5);
+                     SkullBlockRendererAccessor.setItem(itemStack);
+                     Integer id = ((FiguraEntityRenderStateExtension)entityState).figura$getEntityId();
+                     if (id != null) {
+                        SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
+                     }
+
+                     SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
+                     SkullBlockRenderer.submitSkull(f, stack, submitNodeCollector, i, skullModelBase, renderType, entityState.outlineColor, null);
+                  })) {
+                     ci.cancel();
+                  }
+               } else if (this.avatar
+                  .pivotPartRender(
+                     ParentType.HelmetItemPivot,
+                     stack -> {
+                        float s = 10.0F;
+                        stack.translate(0.0, 4.0, 0.0);
+                        stack.scale(s, s, s);
+                        ItemTransform transform = ((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemTransform();
+                        boolean shouldSubmitVanilla = this.avatar
+                           .itemRenderEvent(
+                              ItemStackAPI.verify(((FiguraItemStackRenderStateExtension)itemStackState).figura$getItemStack()),
+                              ((FiguraItemStackRenderStateExtension)itemStackState).figura$getDisplayContext().name(),
+                              FiguraVec3.fromVec3f(transform.translation()),
+                              FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()),
+                              FiguraVec3.fromVec3f(transform.scale()),
+                              ((FiguraItemStackRenderStateExtension)itemStackState).figura$isLeftHanded(),
+                              stack,
+                              submitNodeCollector,
+                              entityState.lightCoords,
+                              OverlayTexture.NO_OVERLAY
+                           );
+                        if (shouldSubmitVanilla) {
+                           entityState.headItem.submit(poseStack, submitNodeCollector, i, OverlayTexture.NO_OVERLAY, entityState.outlineColor);
+                        }
+                     }
+                  )) {
+                  ci.cancel();
+               }
+            }
+         }
+      }
+   }
+
+   @WrapOperation(
+      method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V",
+      at = @At(
+         value = "INVOKE",
+         target = "Lnet/minecraft/client/renderer/item/ItemStackRenderState;submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;III)V"
+      )
+   )
+   private void figuraItemEvent(
+      ItemStackRenderState instance,
+      PoseStack matrices,
+      SubmitNodeCollector submitNodeCollector,
+      int i,
+      int j,
+      int k,
+      Operation<Void> original,
+      @Local(argsOnly = true) S entityState
+   ) {
+      ItemTransform transform = ((FiguraItemStackRenderStateExtension)instance).figura$getItemTransform();
+      boolean callOriginal = this.avatar == null
+         || !this.avatar
+            .itemRenderEvent(
+               ItemStackAPI.verify(((FiguraItemStackRenderStateExtension)instance).figura$getItemStack()),
+               ((FiguraItemStackRenderStateExtension)instance).figura$getDisplayContext().name(),
+               FiguraVec3.fromVec3f(transform.translation()),
+               FiguraVec3.of(transform.rotation().z(), transform.rotation().y(), transform.rotation().x()),
+               FiguraVec3.fromVec3f(transform.scale()),
+               ((FiguraItemStackRenderStateExtension)instance).figura$isLeftHanded(),
+               matrices,
+               submitNodeCollector,
+               i,
+               j
+            );
+      if (callOriginal) {
+         original.call(new Object[]{instance, matrices, submitNodeCollector, i, j, k});
+      }
+   }
+
+   @Inject(
+      at = @At(
+         value = "INVOKE",
+         target = "Lnet/minecraft/client/renderer/blockentity/SkullBlockRenderer;submitSkull(FLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/model/object/skull/SkullModelBase;Lnet/minecraft/client/renderer/rendertype/RenderType;ILnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V"
+      ),
+      method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;FF)V"
+   )
+   private void renderSkull(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int i, S livingEntityRenderState, float f, float g, CallbackInfo ci) {
+      ItemStack stack = ((FiguraItemStackRenderStateExtension)livingEntityRenderState.headItem).figura$getItemStack();
+      if (stack != null) {
+         SkullBlockRendererAccessor.setItem(stack);
+         Integer id = ((FiguraEntityRenderStateExtension)livingEntityRenderState).figura$getEntityId();
+         if (id != null && Minecraft.getInstance().level != null && Minecraft.getInstance().level.getEntity(id) != null) {
+            SkullBlockRendererAccessor.setEntity(Minecraft.getInstance().level.getEntity(id));
+         }
+
+         SkullBlockRendererAccessor.setRenderMode(SkullBlockRendererAccessor.SkullRenderMode.HEAD);
+      }
+   }
+}

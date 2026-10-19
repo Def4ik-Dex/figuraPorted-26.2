@@ -1,0 +1,112 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.17-SNAPSHOT'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = "Modrinth"
+        url = "https://api.modrinth.com/maven"
+    }
+    maven {
+        name = "JitPack"
+        url = "https://jitpack.io"
+    }
+}
+
+dependencies {
+    
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    
+    implementation "maven.modrinth:geckolib:7gaQHok7"
+
+    include(implementation("com.github.FiguraMC.luaj:luaj-core:${project.luaj}-figura"))
+    include(implementation("com.github.FiguraMC.luaj:luaj-jse:${project.luaj}-figura"))
+    include(implementation("com.neovisionaries:nv-websocket-client:${project.nv_websocket}"))
+    include(implementation(annotationProcessor("io.github.llamalad7:mixinextras-fabric:0.3.6")))
+
+    compileOnly "maven.modrinth:modmenu:20.0.1"
+}
+
+sourceSets {
+    main {
+        java {
+            exclude "org/figuramc/figura/mixin/gui/GuiRendererAccessor.java"
+            exclude "org/figuramc/figura/mixin/render/GameRendererMixin.java"
+            exclude "org/figuramc/figura/mixin/render/LevelRendererMixin.java"
+            exclude "org/figuramc/figura/mixin/render/feature/FeatureRendererDispatcherMixin.java"
+            exclude "org/figuramc/figura/mixin/render/feature/FlameFeatureRendererMixin.java"
+            exclude "org/figuramc/figura/mixin/render/feature/ModelPartFeatureRendererMixin.java"
+            exclude "org/figuramc/figura/mixin/render/feature/NameTagFeatureRenderer\$StorageMixin.java"
+            exclude "org/figuramc/figura/mixin/render/feature/NameTagFeatureRendererMixin.java"
+            exclude "org/figuramc/figura/mixin/render/nodeRenderer/SubmitNodeStorage\$FlameSubmitMixin.java"
+            exclude "org/figuramc/figura/mixin/render/nodeRenderer/SubmitNodeStorage\$ItemSubmitMixin.java"
+            exclude "org/figuramc/figura/mixin/render/nodeRenderer/SubmitNodeCollectionMixin.java"
+            exclude "org/figuramc/figura/mixin/render/nodeRenderer/SubmitNodeStorage\$ModelPartSubmitMixin.java"
+            exclude "org/figuramc/figura/mixin/render/nodeRenderer/SubmitNodeStorage\$ModelSubmitMixin.java"
+            exclude "org/figuramc/figura/mixin/render/renderers/ScreenEffectRendererMixin.java"
+        }
+    }
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "minecraft_version", project.minecraft_version
+    inputs.property "loader_version", project.loader_version
+    filteringCharset "UTF-8"
+
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version,
+                "minecraft_version": project.minecraft_version,
+                "loader_version": project.loader_version
+    }
+}
+
+def targetJavaVersion = Integer.parseInt(project.java_version)
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
+        it.options.release.set(targetJavaVersion)
+    }
+}
+
+java {
+    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
+    if (JavaVersion.current() < javaVersion) {
+        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+    }
+    withSourcesJar()
+}
+
+tasks.named("sourcesJar") {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.archives_base_name}" }
+    }
+}
+
+publishing {
+    publications {
+        create("mavenJava", MavenPublication) {
+            artifactId = project.archives_base_name
+            from components.java
+        }
+    }
+}
+loom {
+    accessWidenerPath = file("src/main/resources/figura.accesswidener")
+}
