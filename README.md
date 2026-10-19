@@ -2,7 +2,7 @@
 
 # Figura (Unofficial Port to Minecraft 26.2 ONLY FABRIC!!)
 
-This is an unofficial port of the **Figura** mod from version `1.21.1` to Minecraft `26.2`.
+This is an unofficial port of the **Figura** mod from version `1.21.11 dev` to Minecraft `26.2`.
 
 Original project: [FiguraMC/Figura](https://github.com/FiguraMC/Figura)
 
